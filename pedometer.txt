@@ -1,0 +1,121 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h> // Include the LiquidCrystal_I2C library
+
+#define Register_ID 0
+#define Register_2D 0x2D
+#define Register_X0 0x32
+#define Register_X1 0x33
+#define Register_Y0 0x34
+#define Register_Y1 0x35
+#define Register_Z0 0x36
+#define Register_Z1 0x37
+
+#define Reg_OFSX 0x1E
+#define Reg_OFSY 0x1F
+#define Reg_OFSZ 0x20
+#define Reg_PWR_CTL 0x2D
+
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Address 0x27 for 16x2 display
+
+int ADXAddress = 0xA7 >> 1;
+int X0, X1, X_out;
+int Y0, Y1, Y_out;
+int Z1, Z0, Z_out;
+double Xg, Yg, Zg;
+int stepCount = 0;
+double threshold = 1.0; // Adjust threshold as needed
+
+void setup() {
+  Serial.begin(9600); // Initialize Serial communication
+  lcd.init();        // Initialize the LCD
+  lcd.backlight();   // Turn on the backlight
+  lcd.clear();       // Clear the LCD screen
+
+  Wire.begin();      // Initialize I2C
+  setAccReg(0x31, 0x0B);  // Set measuring range to +/-16g, 13 bit pattern
+  setAccReg(0x2C, 0x08);  // Set reference rate to 12.5
+  setAccReg(0x2D, 0x08);  // Select Power Mode
+  setAccReg(0x2E, 0x80);  // Enable Interrupt DATA_READY
+  setAccReg(0x1E, 0x00);  // Set X offset
+  setAccReg(0x1F, 0x00);  // Set Y offset
+  setAccReg(0x20, 0x05);  // Set Z offset
+  delay(100);
+  Wire.beginTransmission(ADXAddress);
+  Wire.write(Register_2D);
+  Wire.write(8);
+  Wire.endTransmission();
+  delay(500);
+}
+
+void loop() {
+  Wire.beginTransmission(ADXAddress);
+  Wire.write(Register_X0);
+  Wire.write(Register_X1);
+  Wire.endTransmission();
+  Wire.requestFrom(ADXAddress, 2);
+  if (Wire.available() <= 2) {
+    X0 = Wire.read();
+    X1 = Wire.read();
+    X1 = X1 << 8;
+    X_out = X0 + X1;
+  }
+  Wire.beginTransmission(ADXAddress);
+  Wire.write(Register_Y0);
+  Wire.write(Register_Y1);
+  Wire.endTransmission();
+  Wire.requestFrom(ADXAddress, 2);
+  if (Wire.available() <= 2) {
+    Y0 = Wire.read();
+    Y1 = Wire.read();
+    Y1 = Y1 << 8;
+    Y_out = Y0 + Y1;
+  }
+  Wire.beginTransmission(ADXAddress);
+  Wire.write(Register_Z0);
+  Wire.write(Register_Z1);
+  Wire.endTransmission();
+  Wire.requestFrom(ADXAddress, 2);
+  if (Wire.available() <= 2) {
+    Z0 = Wire.read();
+    Z1 = Wire.read();
+    Z1 = Z1 << 8;
+    Z_out = Z0 + Z1;
+  }
+
+  Xg = X_out / 256.00;
+  Yg = Y_out / 256.00;
+  Zg = Z_out / 256.00;
+
+  // Calculate magnitude of acceleration
+  double accelerationMagnitude = sqrt(Xg * Xg + Yg * Yg + Zg * Zg);
+
+  // Check for step
+  if (accelerationMagnitude > threshold) {
+    stepCount++;
+  }
+
+  // Display step count in serial monitor
+  Serial.print("Step count: ");
+  Serial.println(stepCount);
+
+  // Display data on LCD
+  lcd.clear(); // Clear screen
+  lcd.setCursor(0, 0);
+  lcd.print("Step count: ");
+  lcd.print(stepCount);
+  lcd.setCursor(0, 1);
+  lcd.print("Magnitude: ");
+  lcd.print(accelerationMagnitude);
+  delay(500); // Adjust delay as needed for better readability
+}
+
+void setAccReg(int reg, byte value) {
+  setReg(ADXAddress, reg, value);
+}
+
+void setReg(int device, int reg, byte value) {
+  Wire.beginTransmission(device);
+  Wire.write(reg);
+  Wire.write(value);
+  Wire.endTransmission();
+}
